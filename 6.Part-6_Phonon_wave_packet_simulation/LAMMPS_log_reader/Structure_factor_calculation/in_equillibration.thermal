@@ -1,0 +1,240 @@
+# Input Script LAMMPS for studying thermal conductivity of Au/MNL layer
+# Rajan Khadka, 09/08/2021
+# Modified: 1/16/2022
+# Potentials used: Au-Au (Morse), Au-S (Morse 1997)
+
+# ------------------------ INITIALIZATION -----------------------------------------------
+units             metal          # gram/mole, ang, picos, eV, Kelvin, bars
+dimension         3
+newton            on
+boundary          p p p
+atom_style        full           # or try with molecular, angle, atomic
+
+# ------------------------ SYSTEM DEFINITION ----------------------------------------------
+read_data        Au_111_24_C_32_6x5_10K_structure.lmp                                  
+#read_restart    restart.*.THERMK
+restart           1000000 restart.*.THERMK
+
+mass              1 196.9665    # Au
+mass              2 14.0265     # C, This is actually CH2, mass(C)+2mass(H)
+mass              3 32.065      # S
+
+#-----------------Control Input Variables
+variable          dt equal 0.0005                               # Time step (dt) = 2 fs, 0.002 ps
+variable          TEMPR equal 100                              # NPT temperature T= 300 K
+variable          time_PR equal 500                            # Pressure relaxation time, NPT, 300 ps, 1 ns
+variable          time_NVE equal 1000                           # Crystal relaxation time, NVE, 300 ps, 1 ns
+variable          time_TG1 equal 2000                            # Setup thermal gradient, 300 ps, 2 ns
+variable          time_TG2 equal 3000                            # Setup thermal gradient, 300 ps, 2 ns
+variable          perc equal v_TEMPR*1.5/100
+variable          bondstrength equal 1.0 
+
+variable          Do equal 0.38*v_bondstrength
+variable          G equal 150*v_bondstrength*v_perc            # Unit MV/m2K, G=100 MV/m2K, J=delT*G
+variable          delT equal 60                                # Total desired temperature gradient
+variable          N_Intf equal 6                               # Total no. of interfaces
+
+variable          data_avg1 equal 25                             # Averaging the temperature data every #ps
+variable          data_avg2 equal 25                           # Averaging the temperature data during gradient setup 
+variable          SEED equal random(100000,800000,328278)      # Random number seed for velocity
+
+
+#-----------------Internal Variable Computation
+variable          davg1 equal v_data_avg1/v_dt                   # No. of steps for data averaging
+variable          davg2 equal v_data_avg2/v_dt                   # No. of steps for data averaging 
+variable          steps_NVE equal v_time_NVE/v_dt              # Equillibration steps for Crystal relaxation, NVE
+variable          steps_PR equal v_time_PR/v_dt                # Equillibration steps for Pressure relaxation, NPT
+variable          steps_TG1 equal v_time_TG1/v_dt                # Equillibration steps for thermal gratient, NVE
+variable          steps_TG2 equal v_time_TG2/v_dt                # Equillibration steps for thermal gratient, NVE
+
+variable          RSEED format SEED %.6g                       # Rounding off th seed value
+
+
+#--------------Defining the regions----------------------------------------------------------:
+variable          xxy equal xy
+variable          xxz equal xz
+variable          yyz equal yz
+variable          xxlo equal xlo
+variable          xxhi equal xhi
+variable          yylo equal ylo
+variable          yyhi equal yhi
+variable          zzlo equal zlo
+variable          zzhi equal zhi
+
+region            Au_sink prism $(v_xxlo) $(v_xxhi) $(v_yylo) $(v_yyhi) 23 37 $(v_xxy) $(v_xxz) $(v_yyz) side in units box           # region of Au sink   (0, 12)
+region            Au_source prism $(v_xxlo) $(v_xxhi)  $(v_yylo) $(v_yyhi) 114.7 128.5 $(v_xxy) $(v_xxz) $(v_yyz) side in units box               # region of Au source (78,80)  
+
+group             gAu_sink region Au_sink                                          # grouping gold sink atom
+group             gAu_source  region Au_source                                     # grouping gold source atom
+
+#-----------------Force fields
+#-----------------Non-bonded interactions
+pair_style        hybrid lj/cut 11 morse 8
+
+# Morse potential for Au-Au, Au-S interatcion: E=Do[exp(-2alpha{r-ro})-2exp(-alpha{r-ro})]
+#Parameters       Pairs Do     alpha  ro cutoff=2.5ro               
+#Units               eV     A^-1   A
+pair_coeff        1 1 morse 0.475 1.583 3.0242 # Au-Au # Source: DOI: 10.1115/1.4000047
+pair_coeff        1 3 morse $(v_Do) 1.470 2.6500 # Au-S  # Source: DOI: 10.1115/1.4000047, 
+
+#LJ potential for all other pairs: E=4e[(s/r)^12-(s/r)^6], damping, lj cutoff, coulombic cutoff
+#Parameters       Pairs         e      s    cutoff=2.5ro           
+#Units                          eV     A     A
+pair_coeff        2 2 lj/cut 0.00513 3.905  # C-C # Source: dx.doi.org/10.1021/jp200447k 
+pair_coeff        3 3 lj/cut 0.01724 4.250  # S-S # Source: DOI: 10.1115/1.4000047
+pair_coeff        1 2 lj/cut 0.00295 3.424  # Au-C # Source: DOI: 10.1115/1.4000047
+pair_coeff        2 3 lj/cut 0.01086 3.550  # C-S # Source: DOI: 10.1115/1.4000047
+
+#special_bonds     lj 0.0 0.0 0.0 angle yes dihedral yes # Removing the lj interaction between pairs for the atoms specified by bond, angle, dihedral potentials. This is recommended
+#--------------Bonded interactions
+bond_style        harmonic                   # E=K(r-ro)^2
+#Parameters       type    K         ro
+#Units                 ev/A^2       A
+bond_coeff        1    7.00112    1.523                 # C-C, DOI: 10.1115/1.4000047
+bond_coeff        2    7.00112    1.815                 # C-S, DOI: 10.1115/1.4000047
+
+angle_style       harmonic                     # E=K(theta-thetao)^2
+#Parameters       type  K     thetaoo
+#Units            eV/rad^2 degrees
+angle_coeff       1 2.694 109.5                # C-C-C, central atom C, DOI: 10.1115/1.4000047
+angle_coeff       2 2.694 114.4                # S-C-C, central atom C, DOI: 10.1115/1.4000047
+
+
+dihedral_style   fourier                
+#Parameters      type m    K1   n1 d1      K2 n2 d2       K3   n3 d3       
+#Units              eV       eV          eV                  
+dihedral_coeff   1   3 0.03469 1 0.000 -0.0188 2 180.000 0.07025 3 0.000 # C-C-C-C, DOI: 10.1088/0957-4484/27/13/135707
+dihedral_coeff   2   3 0.03469 1 0.000 -0.0188 2 180.000 0.07025 3 0.000 # S-C-C-C, DOI: 10.1088/0957-4484/27/13/135707
+
+
+#------------------------- SIMULATIOIN SETTINGS -------------------------------------------
+run_style        verlet                                                         # Standard velocity-Verlet integrator
+neighbor         2.50 bin
+neigh_modify     delay 20 check yes
+comm_modify      vel yes
+thermo_style     custom time step etotal temp press pxx pyy pzz lx ly lz zlo zhi vol  
+thermo           500
+timestep         $(v_dt)
+
+
+#---------------------RUN A SIMULATION-----------------------------------------------------
+print """
+
+"""
+
+velocity         all create $(v_TEMPR) $(v_RSEED) rot yes dist gaussian                  # velocity group-ID temp seed rot yes/no distribution gaussian/uniform
+
+#------------------------------------------------------------------------------------------
+variable        TS equal time
+variable        TEMP equal temp
+variable        PRES equal press
+
+
+fix            AVE_TEMP all ave/time 1 $(v_davg1) $(v_davg1) v_TEMP v_PRES file ave_temp_press.data                                                 # Average temp, volume
+
+print """
+
+"""
+print "###################################################################################################################################"
+print "#--------------------------- NPT SIMULATION ON ALL ATOMS------------------------------------------------------------------"
+print "###################################################################################################################################"
+print """
+
+"""
+#-----------------NPT on all atoms:
+fix               1 all npt temp $(v_TEMPR) $(v_TEMPR) 0.1 aniso 0 0 5                          # NPT on all atoms 
+fix               BTHERMOSTAT all temp/berendsen $(v_TEMPR) $(v_TEMPR) 5
+dump              1 all custom 30000 dumps-1_NPT.lmc id type x y z vx vy vz fx fy fz 
+dump_modify       1 sort id
+run               $(v_steps_PR)                                                                 # total time = 4 ps
+undump            1
+unfix             1
+unfix             BTHERMOSTAT
+write_restart     restart.*.THERMK_NPT
+write_restart     restart.*.THERMK
+
+fix               2 all npt temp $(v_TEMPR) $(v_TEMPR) 0.1 aniso 0 0 5                          # NPT on all atoms
+dump              2 all custom 30000 dumps-2_NPT.lmc id type x y z vx vy vz fx fy fz
+dump_modify       2 sort id
+run               $(v_steps_PR)                                                                 # total time = 4 ps
+undump            2
+unfix             2
+write_restart     restart.*.THERMK_NPT
+write_restart     restart.*.THERMK
+
+print """
+
+"""
+print "###################################################################################################################################"
+print "#--------------------------- NVE SIMULATION ON ALL ATOMS------------------------------------------------------------------"
+print "###################################################################################################################################"
+
+print """
+
+"""
+
+#-----------------NVE on all atoms:
+fix               3  all nve                                                                     # NPT on indentation atom
+fix               NVE_therm all temp/berendsen $(v_TEMPR) $(v_TEMPR) 0.1
+dump              3 all custom 30000 dumps-3_NVE.lmc id type x y z vx vy vz fx fy fz
+dump_modify       3 sort id
+run               $(v_steps_NVE)                                                                 # total time = 4 ps
+undump            3
+unfix             3
+unfix             NVE_therm
+write_restart     restart.*.THERMK_NVE
+write_restart     restart.*.THERMK
+
+
+#-----------------Heat rate computation
+variable          J equal v_delT*v_G*1e-7/v_N_Intf                # J=dT*G, Converting into eV/A2*ps Mwatt/m2K = 1e6 J/s=1e6/(1.6*10^-19*10^20*10^12)=1e-7 eV/A2*ps
+variable          Lx equal lx
+variable          Ly equal ly
+variable          H_rate equal v_J*2*v_Lx*v_Ly                   # approx 0.5 eV/ps*K
+
+#---------------Computing temperatures of Au block source and sink
+compute         T_Au_source gAu_source temp
+compute         T_Au_sink gAu_sink temp
+
+
+#---------------Averaging the temperature of atomic layer every 5 ps
+
+###EDITED BELOW!!!!!!!!!!!!!!!!!!!!!!
+fix             AVE_DATA_out all ave/time 1 $(v_davg2) $(v_davg2) c_T_Au_source c_T_Au_sink   # Averaging every 1 ps
+###EDITED ABOVE!!!!!!!!!!!!!!!!!!!!!!
+
+thermo_style     custom time step etotal temp press pxx pyy pzz lx ly lz vol c_T_Au_source c_T_Au_sink
+
+print "#------------------------------------------Simulation results-------------------------#" file Au-MNL_thermal_gradient.dat
+print "No. of interfaces     : $(v_N_Intf) " append Au-MNL_thermal_gradient.dat
+print "Value of G used       : $(v_G) MWatt/m2*K " append Au-MNL_thermal_gradient.dat
+print "Value of Heat flux (J): $(v_J) eV/A2*ps " append Au-MNL_thermal_gradient.dat
+print "Heat rate applied     : $(v_H_rate) eV/ps " append Au-MNL_thermal_gradient.dat
+print "#------------------------------------------------------------------------------------#" append Au-MNL_thermal_gradient.dat
+
+
+###EDITED BELOW!!!!!!!!!!!!!!!!!!!!!!
+fix             PRINT_NI_out all print $(v_davg2) "$(v_TS) $(c_T_Au_source) $(c_T_Au_sink)  " append Au-MNL_thermal_gradient.dat title "Time(ps) Au_source Au_sink "  screen no
+###EDITED ABOVE!!!!!!!!!!!!!!!!!!!!!!
+
+print """
+
+"""
+print "###################################################################################################################################"
+print "#--------------------------- NVE THERMAL GRADIENT SIMULATION ON ALL ATOMS--------------------------------------------------"
+print "###################################################################################################################################"
+print """
+
+"""
+
+#-----------------NVE thermal gradient:
+fix               4  all nve                                                                     # NPT on indentation atom
+fix               qin gAu_source heat 10 $(v_H_rate)                                                     # Adding heating every timestep
+fix               qout gAu_sink heat 10 -$(v_H_rate)                                                     # Removing heat every timestep
+dump              4 all custom 80000 dumps-3_NVE_thermal_gradient.lmc id type x y z vx vy vz fx fy fz
+dump_modify       4 sort id
+run               $(v_steps_TG1)                                                                 # total time = 4 ps
+undump            4
+unfix             4
+write_restart     restart.*.THERMK_NVE_THERMAL_GRADIENT
+write_restart     restart.*.THERMK
