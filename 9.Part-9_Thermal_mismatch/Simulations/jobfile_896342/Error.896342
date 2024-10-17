@@ -1,0 +1,15 @@
+mv: cannot stat 'dumps_pol.lmc': No such file or directory
+mv: cannot stat 'dumps_pol_frame.lmc': No such file or directory
+mv: cannot stat 'dumps_disp.lmc': No such file or directory
+mv: cannot stat 'ave_temp_vol.dat': No such file or directory
+mv: cannot stat 'ave_temp_lat_angle.dat': No such file or directory
+mv: cannot stat 'dumps_5_EF-All_side.lmc': No such file or directory
+mv: target 'jobfile_895055' is not a directory
+mv: cannot stat 'dump_stress-strain.lmc': No such file or directory
+mv: cannot stat 'Shear.dat': No such file or directory
+mv: target 'jobfile_895055' is not a directory
+mv: cannot stat 'Nano_indent_in.dat': No such file or directory
+mv: cannot stat 'Nano_indent_out.dat': No such file or directory
+mv: cannot stat 'Nano_*': No such file or directory
+mv: target 'jobfile_895055' is not a directory
+slurmstepd: error: *** JOB 896342 ON dcs039 CANCELLED AT 2023-09-15T04:42:09 DUE TO TIME LIMIT ***

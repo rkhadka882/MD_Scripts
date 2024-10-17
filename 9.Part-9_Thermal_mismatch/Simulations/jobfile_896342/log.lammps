@@ -1,0 +1,9 @@
+LAMMPS (23 Jun 2022)
+# Input Script LAMMPS for studying Phonon wave packet simulation on Au
+# Rajan Khadka, 01/31/2023
+# Modified: 1/16/2022
+# Potentials used: Au-Au (Morse), Au-S (Morse 1997)
+
+variable          name index Au_100_cell_10nm.lmp
+log               log.${name}
+log               log.Au_100_cell_10nm.lmp
