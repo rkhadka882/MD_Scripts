@@ -1,0 +1,361 @@
+LAMMPS (2 Aug 2023 - Update 1)
+OMP_NUM_THREADS environment is not set. Defaulting to 1 thread. (src/comm.cpp:98)
+  using 1 OpenMP thread(s) per MPI task
+Loaded 1 plugins from /gpfs/u/home/TMGN/TMGNmyfd/scratch-shared/npl_miniconda/envs/deepmd_gpu/lib/deepmd_lmp
+# Input Script LAMMPS for studying Phonon wave packet simulation on Au
+#
+# # Rajan Khadka, 10/5/2023
+# # Modified:
+# # Potentials used: DeepMD
+
+# use 8 GPUs
+#processors 2 2 2      # Uncomment for multiple GPUs
+
+# Location of DeepMD potential:
+variable          loc index /gpfs/u/home/TMGN/TMGNrjkh/scratch/NNP_versions # Put all your Models here,
+print "location ${loc}"
+location /gpfs/u/home/TMGN/TMGNrjkh/scratch/NNP_versions
+
+# Atom insertion control variables available on command line
+variable	near index 2			# defines how close to insert atoms while inserting
+variable 	everyDP index 100		# recommended value: 5000, increasing this value will slow down the atom insertion rate
+variable 	insert index 16000   		# Total number of atom to insert
+
+# ------------------------ INITIALIZATION -----------------------------------------------
+units           metal       # gram/mole, ang, pico sec, eV, Kelvin, bars
+dimension	3
+newton		on
+boundary        p p p
+atom_style      full       #
+
+# ------------------------ SYSTEM DEFINITION ----------------------------------------------
+read_data        Slab_SiO2_800K.lmc
+Reading data file ...
+  orthogonal box = (-0.52724684 1.1515441 0.6554901) to (51.829123 50.150332 315.65549)
+  1 by 1 by 1 MPI processor grid
+  reading atoms ...
+  10800 atoms
+Finding 1-2 1-3 1-4 neighbors ...
+  special bond factors lj:    0        0        0       
+  special bond factors coul:  0        0        0       
+     0 = max # of 1-2 neighbors
+     0 = max # of 1-3 neighbors
+     0 = max # of 1-4 neighbors
+     1 = max # of special neighbors
+  special bonds CPU = 0.001 seconds
+  read_data CPU = 0.022 seconds
+#read_restart    restart.*.DEEPMD
+restart          200000 restart.*.DEEPMD
+
+#-----------------NEEDED FOR STARTING WITH RANDOM CONFIGURATION
+#variable         lbox index 15.0                                # Box size to create
+#region           box block 0 41.9156 0 120.9156 0 41.9156
+#create_box	 3 box
+
+#---------------Follow the order of atom numbering on structure file
+mass              1 28.086  # Si
+mass              2 15.999  # O
+mass              3 58.933  # Co
+
+group             Si type 1
+3600 atoms in group Si
+group             O type 2
+7200 atoms in group O
+group             Co  type 3
+0 atoms in group Co
+
+#-----------------Control Input Variables
+variable	  NNPfreq equal 100				# NNP model deviation frequency
+variable          dfreq equal 0.5                               # recommended value = 2, dfreq = dump frequency in ps, DONT CHANGE
+variable          dt equal 0.001                                # Time step (dt) = 0.25 fs, 0.00025 ps
+variable          TEMPR1 equal 800                              # NPT temperature T= 10 K
+variable          time_PR equal 2000                            # Pressure relaxation time, NPT, 50 ps
+variable          time_EM equal 100                             # Energy minimization
+variable          SEED equal random(100000,800000,328278)       # Random number seed for velocity
+
+#-----------------Internal Variable Computation
+variable          dumpfreq equal v_dfreq/v_dt                   # Calculating the steps for dumping the frame.
+variable          steps_PR equal v_time_PR/v_dt                # Equillibration steps for Pressure relaxation, NPT
+variable          steps_EM equal v_time_EM/v_dt                # Equillibration steps for energy minimization
+variable          RSEED format SEED %.6g                       # Rounding off th seed value
+
+#-----------------Force fields
+# See https://deepmd.rtfd.io/lammps/ for usage
+#pair_style      deepmd ${loc}/NNP-7_M1.pb ${loc}/NNP-7_M2.pb ${loc}/NNP-7_M3.pb out_file model_devi.out out_freq $(v_NNPfreq)
+pair_style      deepmd ${loc}/NNP-15_M3-compress.pb            # Change this to your model name
+pair_style      deepmd /gpfs/u/home/TMGN/TMGNrjkh/scratch/NNP_versions/NNP-15_M3-compress.pb            
+Summary of lammps deepmd module ...
+  >>> Info of deepmd-kit:
+  installed to:       /gpfs/u/home/TMGN/TMGNmyfd/scratch-shared/npl_miniconda/envs/deepmd_gpu
+  source:             v2.2.5-dirty
+  source branch:       HEAD
+  source commit:      477b7856
+  source commit at:   2023-09-27 09:35:45 +0800
+  surpport model ver.:1.1 
+  build variant:      cuda
+  build with tf inc:  /gpfs/u/home/TMGN/TMGNmyfd/scratch-shared/npl_miniconda/envs/deepmd_gpu/include;/gpfs/u/home/TMGN/TMGNmyfd/scratch-shared/npl_miniconda/envs/deepmd_gpu/include
+  build with tf lib:  /gpfs/u/home/TMGN/TMGNmyfd/scratch-shared/npl_miniconda/envs/deepmd_gpu/lib/libtensorflow_cc.so
+  set tf intra_op_parallelism_threads: 0
+  set tf inter_op_parallelism_threads: 0
+  >>> Info of lammps module:
+  use deepmd-kit at:  /gpfs/u/home/TMGN/TMGNmyfd/scratch-shared/npl_miniconda/envs/deepmd_gpu
+# If atom names (O H in this example) are not set in the pair_coeff command, the type_map defined by the training parameter will be used by default.
+pair_coeff  	* *	Si O Co
+
+
+#------------------------- SIMULATIOIN SETTINGS -------------------------------------------
+#run_style        verlet                                                         # Standard velocity-Verlet integrator
+#neighbor         2.0 bin
+#neigh_modify     delay 0 every 10 check no
+#comm_modify      vel yes
+thermo_style     custom time step etotal ke pe temp press pxx pyy pzz lx ly lz vol density
+thermo           100
+timestep         $(v_dt)
+timestep         0.0010000000000000000208
+
+#velocity         all create $(v_TEMPR1) $(v_RSEED) rot yes dist gaussian
+
+#-------------------Computing per atom properties
+compute 	  keatm all ke/atom
+compute           peatm all pe/atom
+compute		  stratm all centroid/stress/atom NULL virial              # 1= xx, 2=yy, 3=zz, 4=xy, 5=xz, 6=yz, 7=yx, 8=zx, 9=zy
+
+
+#-----------------ENERGY MINIMIZATION SIMULATION
+##---------------------RUN A SIMULATION-----------------------------------------------------
+#min_style         cg
+#minimize          1e-16 1e-16 $(v_steps_EM) 1000000
+#dump              min all custom 1500 dumps_EM.lmc id type x y z vx vy vz fx fy fz
+#dump_modify       min sort id
+#undump            min
+#write_restart     restart.*.DEEPMD
+#write_restart     restart.*.DEEPMD
+
+#Note:
+# fix ID group-ID gcmc N X M type seed T mu displace keyword values ...
+#When pressure is specified chemical potential is ignored
+#full_energy: calculates total potential energy of entire system
+
+
+variable 	  rho equal density
+variable 	  P equal press
+
+variable          xxy equal xy
+variable          xxz equal xz
+variable          yyz equal yz
+variable          xxlo equal xlo
+variable          xxhi equal xhi
+variable          yylo equal ylo
+variable          yyhi equal yhi
+variable          zzlo equal zlo
+variable          zzhi equal zhi
+
+region 		  atom_box  prism $(v_xxlo) $(v_xxhi) $(v_yylo) $(v_yyhi) 30 55 $(v_xxy) $(v_xxz) $(v_yyz) side in units box
+region 		  atom_box  prism -0.52724683859999998958 $(v_xxhi) $(v_yylo) $(v_yyhi) 30 55 $(v_xxy) $(v_xxz) $(v_yyz) side in units box
+region 		  atom_box  prism -0.52724683859999998958 51.829122906700000328 $(v_yylo) $(v_yyhi) 30 55 $(v_xxy) $(v_xxz) $(v_yyz) side in units box
+region 		  atom_box  prism -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 $(v_yyhi) 30 55 $(v_xxy) $(v_xxz) $(v_yyz) side in units box
+region 		  atom_box  prism -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 30 55 $(v_xxy) $(v_xxz) $(v_yyz) side in units box
+region 		  atom_box  prism -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 30 55 0 $(v_xxz) $(v_yyz) side in units box
+region 		  atom_box  prism -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 30 55 0 0 $(v_yyz) side in units box
+region 		  atom_box  prism -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 30 55 0 0 0 side in units box
+region            fixatm prism $(v_xxlo) $(v_xxhi) $(v_yylo) $(v_yyhi) $(v_zzlo) $(v_zzlo+2) $(v_xxy) $(v_xxz) $(v_yyz) side in units box    # region of fixatm
+region            fixatm prism -0.52724683859999998958 $(v_xxhi) $(v_yylo) $(v_yyhi) $(v_zzlo) $(v_zzlo+2) $(v_xxy) $(v_xxz) $(v_yyz) side in units box    
+region            fixatm prism -0.52724683859999998958 51.829122906700000328 $(v_yylo) $(v_yyhi) $(v_zzlo) $(v_zzlo+2) $(v_xxy) $(v_xxz) $(v_yyz) side in units box    
+region            fixatm prism -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 $(v_yyhi) $(v_zzlo) $(v_zzlo+2) $(v_xxy) $(v_xxz) $(v_yyz) side in units box    
+region            fixatm prism -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 $(v_zzlo) $(v_zzlo+2) $(v_xxy) $(v_xxz) $(v_yyz) side in units box    
+region            fixatm prism -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 0.65549009950000003411 $(v_zzlo+2) $(v_xxy) $(v_xxz) $(v_yyz) side in units box    
+region            fixatm prism -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 0.65549009950000003411 2.6554900995000001451 $(v_xxy) $(v_xxz) $(v_yyz) side in units box    
+region            fixatm prism -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 0.65549009950000003411 2.6554900995000001451 0 $(v_xxz) $(v_yyz) side in units box    
+region            fixatm prism -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 0.65549009950000003411 2.6554900995000001451 0 0 $(v_yyz) side in units box    
+region            fixatm prism -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 0.65549009950000003411 2.6554900995000001451 0 0 0 side in units box    
+group             gfixatm region fixatm                                          # groupong fixatm
+323 atoms in group gfixatm
+
+# Two different regions for atom inserion:
+region		  insertR1 block $(v_xxlo) $(v_xxhi) $(v_yylo) $(v_yyhi) $(v_zzhi/2+5) $(v_zzhi/2+35) units box
+region		  insertR1 block -0.52724683859999998958 $(v_xxhi) $(v_yylo) $(v_yyhi) $(v_zzhi/2+5) $(v_zzhi/2+35) units box
+region		  insertR1 block -0.52724683859999998958 51.829122906700000328 $(v_yylo) $(v_yyhi) $(v_zzhi/2+5) $(v_zzhi/2+35) units box
+region		  insertR1 block -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 $(v_yyhi) $(v_zzhi/2+5) $(v_zzhi/2+35) units box
+region		  insertR1 block -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 $(v_zzhi/2+5) $(v_zzhi/2+35) units box
+region		  insertR1 block -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 162.82774504975000696 $(v_zzhi/2+35) units box
+region		  insertR1 block -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 162.82774504975000696 192.82774504975000696 units box
+region            insertR block $(v_xxlo) $(v_xxhi) $(v_yylo) $(v_yyhi) $(v_zzhi/2-35) $(v_zzhi/2-5) units box
+region            insertR block -0.52724683859999998958 $(v_xxhi) $(v_yylo) $(v_yyhi) $(v_zzhi/2-35) $(v_zzhi/2-5) units box
+region            insertR block -0.52724683859999998958 51.829122906700000328 $(v_yylo) $(v_yyhi) $(v_zzhi/2-35) $(v_zzhi/2-5) units box
+region            insertR block -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 $(v_yyhi) $(v_zzhi/2-35) $(v_zzhi/2-5) units box
+region            insertR block -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 $(v_zzhi/2-35) $(v_zzhi/2-5) units box
+region            insertR block -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 122.82774504975000696 $(v_zzhi/2-5) units box
+region            insertR block -0.52724683859999998958 51.829122906700000328 1.1515441385000000363 50.15033192960000008 122.82774504975000696 152.82774504975000696 units box
+
+#-----------------NPT on all atoms:
+# For dynamic update of temperature
+compute           mdtemp all temp
+compute_modify    mdtemp dynamic/dof yes
+
+fix               1 all nvt temp $(v_TEMPR1) $(v_TEMPR1) $(v_dt*100) #aniso 0 0 $(v_dt*1000)                          # NPT on all atoms
+fix               1 all nvt temp 800 $(v_TEMPR1) $(v_dt*100) 
+fix               1 all nvt temp 800 800 $(v_dt*100) 
+fix               1 all nvt temp 800 800 0.10000000000000000555 
+fix_modify        1 temp mdtemp
+
+# Fixing the 2 angstrom of SiO2 atoms:
+fix               Force_fixatm_out gfixatm setforce 0.0 0.0 0.0
+velocity          gfixatm set 0 0 0 units box
+
+# Depositing Co atoms in two different regions:
+fix               DP1 Co deposit $(v_insert) 3 $(v_everyDP) $(v_RSEED) region insertR near $(v_near) vx -6.0 6.0 vy -6.0 6.0 vz -6.0 6.0
+fix               DP1 Co deposit 16000 3 $(v_everyDP) $(v_RSEED) region insertR near $(v_near) vx -6.0 6.0 vy -6.0 6.0 vz -6.0 6.0
+fix               DP1 Co deposit 16000 3 100 $(v_RSEED) region insertR near $(v_near) vx -6.0 6.0 vy -6.0 6.0 vz -6.0 6.0
+fix               DP1 Co deposit 16000 3 100 274727 region insertR near $(v_near) vx -6.0 6.0 vy -6.0 6.0 vz -6.0 6.0
+fix               DP1 Co deposit 16000 3 100 274727 region insertR near 2 vx -6.0 6.0 vy -6.0 6.0 vz -6.0 6.0
+fix               DP11 Co deposit $(v_insert) 3 $(v_everyDP) $(v_RSEED) region insertR1 near $(v_near) vx -6.0 6.0 vy -6.0 6.0 vz -6.0 6.0
+fix               DP11 Co deposit 16000 3 $(v_everyDP) $(v_RSEED) region insertR1 near $(v_near) vx -6.0 6.0 vy -6.0 6.0 vz -6.0 6.0
+fix               DP11 Co deposit 16000 3 100 $(v_RSEED) region insertR1 near $(v_near) vx -6.0 6.0 vy -6.0 6.0 vz -6.0 6.0
+fix               DP11 Co deposit 16000 3 100 756634 region insertR1 near $(v_near) vx -6.0 6.0 vy -6.0 6.0 vz -6.0 6.0
+fix               DP11 Co deposit 16000 3 100 756634 region insertR1 near 2 vx -6.0 6.0 vy -6.0 6.0 vz -6.0 6.0
+
+# Dumping the coordinates every 2 ps:
+dump              1 all custom $(v_dumpfreq) dumps-1_NVT.lmc id type element x y z vx vy vz fx fy fz c_stratm[1] c_stratm[2] c_stratm[3] c_stratm[4] c_stratm[5] c_stratm[6] c_stratm[7] c_stratm[8] c_stratm[9]
+dump              1 all custom 500 dumps-1_NVT.lmc id type element x y z vx vy vz fx fy fz c_stratm[1] c_stratm[2] c_stratm[3] c_stratm[4] c_stratm[5] c_stratm[6] c_stratm[7] c_stratm[8] c_stratm[9]
+dump_modify       1 sort id element Si O Co
+
+# Counting Co atoms dynamically
+variable         Cobalt atom "type==3"
+group            Cobalt dynamic all var Cobalt
+dynamic group Cobalt defined
+variable         nCo equal count(Cobalt)+0.00001
+variable         Time equal time
+variable         Rate equal v_nCo/(v_Time+0.000001)
+
+variable          Temp equal c_mdtemp
+thermo_style     custom time step etotal ke pe v_Temp press v_nCo v_Rate density
+
+run               $(v_steps_PR)                                                                 # total time = 4 ps
+run               2000000                                                                 
+
+CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE
+
+Your simulation uses code contributions which should be cited:
+
+- USER-DEEPMD package:
+
+@article{Wang_ComputPhysCommun_2018_v228_p178,
+  author = {Wang, Han and Zhang, Linfeng and Han, Jiequn and E, Weinan},
+  doi = {10.1016/j.cpc.2018.03.016},
+  url = {https://doi.org/10.1016/j.cpc.2018.03.016},
+  year = 2018,
+  month = {jul},
+  publisher = {Elsevier {BV}},
+  volume = 228,
+  journal = {Comput. Phys. Commun.},
+  title = {{DeePMD-kit: A deep learning package for many-body potential energy representation and molecular dynamics}},
+  pages = {178--184}
+}
+@misc{Zeng_JChemPhys_2023_v159_p054801,
+  title  = {{DeePMD-kit v2: A software package for deep potential models}},
+  author =   {Jinzhe Zeng and Duo Zhang and Denghui Lu and Pinghui Mo and Zeyu Li
+         and Yixiao Chen and Mari{\'a}n Rynik and Li'ang Huang and Ziyao Li and 
+         Shaochen Shi and Yingze Wang and Haotian Ye and Ping Tuo and Jiabin
+         Yang and Ye Ding and Yifan Li and Davide Tisi and Qiyu Zeng and Han 
+         Bao and Yu Xia and Jiameng Huang and Koki Muraoka and Yibo Wang and 
+         Junhan Chang and Fengbo Yuan and Sigbj{\o}rn L{\o}land Bore and Chun
+         Cai and Yinnian Lin and Bo Wang and Jiayan Xu and Jia-Xin Zhu and 
+         Chenxing Luo and Yuzhi Zhang and Rhys E A Goodall and Wenshuo Liang
+         and Anurag Kumar Singh and Sikai Yao and Jingchao Zhang and Renata
+         Wentzcovitch and Jiequn Han and Jie Liu and Weile Jia and Darrin M
+         York and Weinan E and Roberto Car and Linfeng Zhang and Han Wang},
+  journal =  {J. Chem. Phys.},
+  volume =   159,
+  issue =    5,  
+  year =    2023,
+  pages  =   054801,
+  doi =      {10.1063/5.0155600},
+}
+
+- compute centroid/stress/atom for angles, impropers and dihedrals: doi:10.1103/PhysRevE.99.051301
+
+@article{Surblys2019,
+ title = {Application of Atomic Stress to Compute Heat Flux via Molecular
+    Dynamics for Systems With Many-Body Interactions},
+ author = {Surblys, Donatas and Matsubara, Hiroki and Kikugawa, Gota and Ohara, Taku},
+ journal = {Physical Review~E},
+ volume = {99},
+ issue = {5},
+ pages = {051301},
+ year = {2019},
+ doi = {10.1103/PhysRevE.99.051301},
+ url = {https://link.aps.org/doi/10.1103/PhysRevE.99.051301}
+}
+
+- compute centroid/stress/atom for constrained dynamics: doi:10.1063/5.0070930
+
+@article{Surblys2021,
+ author = {Surblys, Donatas and Matsubara, Hiroki and Kikugawa, Gota and Ohara, Taku},
+ journal = {Journal of Applied Physics},
+ title = {Methodology and Meaning of Computing Heat Flux via Atomic Stress in Systems with
+    Constraint Dynamics},
+ volume = {130},
+ number = {21},
+ pages = {215104},
+ year = {2021},
+ doi = {10.1063/5.0070930},
+ url = {https://doi.org/10.1063/5.0070930},
+}
+
+CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE
+
+Generated 0 of 3 mixed pair_coeff terms from geometric mixing rule
+Neighbor list info ...
+  update: every = 1 steps, delay = 0 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 8
+  ghost atom cutoff = 8
+  binsize = 4, bins = 14 13 79
+  1 neighbor lists, perpetual/occasional/extra = 1 0 0
+  (1) pair deepmd, perpetual
+      attributes: full, newton on
+      pair build: full/bin
+      stencil: full/bin/3d
+      bin: standard
+Per MPI rank memory allocation (min/avg/max) = 20.38 | 20.38 | 20.38 Mbytes
+     Time         Step         TotEng         KinEng         PotEng         v_Temp         Press          v_nCo          v_Rate        Density    
+ 0                      0  -68286.575      0             -68286.575      0             -1416.6843      1e-05          10             0.44447259   
+ 0.1                  100  -68205.854      684.55813     -68890.412      490.32239      138.2424       2.00001        19.9999        0.44471479   
+ 0.2                  200  -68087.868      755.2246      -68843.093      540.83789     -653.01447      4.00001        19.99995       0.44495699   
+ 0.3                  300  -67954.326      827.93376     -68782.259      592.79725     -255.85638      6.00001        19.999967      0.44519918   
+ 0.4                  400  -67812.649      919.86693     -68732.515      658.49914     -278.04799      8.00001        19.999975      0.44544138   
+ 0.5                  500  -67672.848      993.6049      -68666.453      711.15386     -263.27422      10.00001       19.99998       0.44568358   
+ 0.6                  600  -67546.728      1067.3938     -68614.121      763.82552      21.15951       12.00001       19.999983      0.44592578   
+ 0.7                  700  -67446.707      1123.5743     -68570.281      803.87952     -284.15539      14.00001       19.999986      0.44616798   
+ 0.8                  800  -67397.667      1153.0924     -68550.76       824.84611      42.60786       16.00001       19.999988      0.44641018   
+ 0.9                  900  -67417.004      1137.0212     -68554.026      813.19946     -111.64066      18.00001       19.999989      0.44665238   
+ 1                   1000  -67469.259      1106.2442     -68575.503      791.04144     -701.39068      20.00001       19.99999       0.44689458   
+ 1.1                 1100  -67503.795      1095.7965     -68599.591      783.42579     -244.40961      22.00001       19.999991      0.44713678   
+ 1.2                 1200  -67496.32       1104.8406     -68601.16       789.7458      -300.30455      24.00001       19.999992      0.44737897   
+ 1.3                 1300  -67454.941      1108.4014     -68563.342      792.14467     -124.87736      26.00001       19.999992      0.44762117   
+ 1.4                 1400  -67412.469      1139.9979     -68552.467      814.57538     -397.29073      28.00001       19.999993      0.44786337   
+ 1.5                 1500  -67404.283      1139.0872     -68543.37       813.77432     -129.58324      30.00001       19.999993      0.44810557   
+ 1.6                 1600  -67440.196      1137.5365     -68577.733      812.51641     -321.66773      32.00001       19.999994      0.44834777   
+ 1.7                 1700  -67484.45       1104.6555     -68589.106      788.8846      -572.67724      34.00001       19.999994      0.44858997   
+ 1.8                 1800  -67505.071      1105.6659     -68610.737      789.46039     -449.1472       36.00001       19.999994      0.44883217   
+ 1.9                 1900  -67494.885      1108.1012     -68602.986      791.05325     -155.00721      38.00001       19.999995      0.44907437   
+ 2                   2000  -67461.498      1131.0131     -68592.511      807.26066     -403.88581      40.00001       19.999995      0.44931657   
+ 2.1                 2100  -67444.28       1142.3859     -68586.666      815.22754      188.45493      42.00001       19.999995      0.44955877   
+ 2.2                 2200  -67469.549      1138.3885     -68607.938      812.22507     -521.04095      44.00001       19.999995      0.44980096   
+ 2.3                 2300  -67515.508      1116.2813     -68631.789      796.30503     -71.330581      46.00001       19.999996      0.45004316   
+ 2.4                 2400  -67541.883      1094.7324     -68636.616      780.78904     -254.77495      48.00001       19.999996      0.45028536   
+ 2.5                 2500  -67531.785      1093.5906     -68625.376      779.83089     -104.58247      50.00001       19.999996      0.45052756   
+ 2.6                 2600  -67489.7        1123.6358     -68613.336      801.10815     -349.68328      52.00001       19.999996      0.45076976   
+ 2.7                 2700  -67453.359      1138.3301     -68591.689      811.43508     -213.25974      54.00001       19.999996      0.45101196   
+ 2.8                 2800  -67449.158      1133.9797     -68583.138      808.18509     -517.30873      56.00001       19.999996      0.45125416   
+ 2.9                 2900  -67470.041      1127.1525     -68597.194      803.17137     -354.70928      58.00001       19.999997      0.45149636   
+ 3                   3000  -67493.028      1110.3543     -68603.383      791.05578     -143.01361      60.00001       19.999997      0.45173856   
+ 3.1                 3100  -67496.698      1108.7207     -68605.419      789.74649      111.49565      62.00001       19.999997      0.45198075   
+ 3.2                 3200  -67475.113      1124.1532     -68599.266      800.59171     -216.22831      64.00001       19.999997      0.45222295   
+ 3.3                 3300  -67446.078      1137.2135     -68583.292      809.74381     -338.18249      66.00001       19.999997      0.45246515   
+ 3.4                 3400  -67436.153      1129.3465     -68565.499      803.99419      60.788585      68.00001       19.999997      0.45270735   
+ 3.5                 3500  -67450.104      1131.8061     -68581.911      805.59691      211.00686      70.00001       19.999997      0.45294955   
+ 3.6                 3600  -67475.072      1128.7028     -68603.774      803.24023     -191.31831      72.00001       19.999997      0.45319175   
+ 3.7                 3700  -67490.729      1109.703      -68600.432      789.57379      178.22282      74.00001       19.999997      0.45343395   
+ 3.8                 3800  -67488.578      1121.9993     -68610.578      798.17606      207.03284      76.00001       19.999997      0.45367615   
+ 3.9                 3900  -67481.715      1128.9614     -68610.677      802.98113      184.9077       78.00001       19.999997      0.45391

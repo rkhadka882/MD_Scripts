@@ -1,0 +1,160 @@
+# Input Script LAMMPS for studying Phonon wave packet simulation on Au
+#
+# # Rajan Khadka, 10/5/2023
+# # Modified:
+# # Potentials used: DeepMD
+
+# use 8 GPUs
+#processors 2 2 2      # Uncomment for multiple GPUs
+
+# Location of DeepMD potential:
+variable          loc index /gpfs/u/home/TMGN/TMGNrjkh/scratch/NNP_versions # Put all your Models here, 
+print "location ${loc}" 
+
+# Atom insertion control variables available on command line
+variable	near index 2			# defines how close to insert atoms while inserting
+variable 	everyDP index 1000		# recommended value: 5000, increasing this value will slow down the atom insertion rate
+variable 	insert index 16000   		# Total number of atom to insert
+
+# ------------------------ INITIALIZATION -----------------------------------------------
+units           metal       # gram/mole, ang, pico sec, eV, Kelvin, bars
+dimension	3
+newton		on
+boundary        p p p
+atom_style      full       #
+
+# ------------------------ SYSTEM DEFINITION ----------------------------------------------
+read_data        Slab_SiO2_800K.lmc
+#read_restart    restart.*.DEEPMD
+restart          200000 restart.*.DEEPMD
+
+#-----------------NEEDED FOR STARTING WITH RANDOM CONFIGURATION
+#variable         lbox index 15.0                                # Box size to create
+#region           box block 0 41.9156 0 120.9156 0 41.9156
+#create_box	 3 box
+
+#---------------Follow the order of atom numbering on structure file
+mass              1 28.086  # Si
+mass              2 15.999  # O
+mass              3 58.933  # Co
+
+group             Si type 1
+group             O type 2
+group             Co  type 3
+
+#-----------------Control Input Variables
+variable	  NNPfreq equal 100				# NNP model deviation frequency
+variable          dfreq equal 0.5                               # recommended value = 2, dfreq = dump frequency in ps, DONT CHANGE
+variable          dt equal 0.001                                # Time step (dt) = 0.25 fs, 0.00025 ps
+variable          TEMPR1 equal 800                              # NPT temperature T= 10 K
+variable          time_PR equal 2000                            # Pressure relaxation time, NPT, 50 ps
+variable          time_EM equal 100                             # Energy minimization
+variable          SEED equal random(100000,800000,328278)       # Random number seed for velocity
+
+#-----------------Internal Variable Computation
+variable          dumpfreq equal v_dfreq/v_dt                   # Calculating the steps for dumping the frame.
+variable          steps_PR equal v_time_PR/v_dt                # Equillibration steps for Pressure relaxation, NPT
+variable          steps_EM equal v_time_EM/v_dt                # Equillibration steps for energy minimization
+variable          RSEED format SEED %.6g                       # Rounding off th seed value
+
+#-----------------Force fields
+# See https://deepmd.rtfd.io/lammps/ for usage
+#pair_style      deepmd ${loc}/NNP-7_M1.pb ${loc}/NNP-7_M2.pb ${loc}/NNP-7_M3.pb out_file model_devi.out out_freq $(v_NNPfreq)
+pair_style      deepmd ${loc}/NNP-15_M3-compress.pb            # Change this to your model name
+
+# If atom names (O H in this example) are not set in the pair_coeff command, the type_map defined by the training parameter will be used by default.
+pair_coeff  	* *	Si O Co
+
+
+#------------------------- SIMULATIOIN SETTINGS -------------------------------------------
+#run_style        verlet                                                         # Standard velocity-Verlet integrator
+#neighbor         2.0 bin
+#neigh_modify     delay 0 every 10 check no
+#comm_modify      vel yes
+thermo_style     custom time step etotal ke pe temp press pxx pyy pzz lx ly lz vol density  
+thermo           100
+timestep         $(v_dt)
+
+#velocity         all create $(v_TEMPR1) $(v_RSEED) rot yes dist gaussian
+
+#-------------------Computing per atom properties
+compute 	  keatm all ke/atom
+compute           peatm all pe/atom 
+compute		  stratm all centroid/stress/atom NULL virial              # 1= xx, 2=yy, 3=zz, 4=xy, 5=xz, 6=yz, 7=yx, 8=zx, 9=zy  
+
+
+#-----------------ENERGY MINIMIZATION SIMULATION
+##---------------------RUN A SIMULATION-----------------------------------------------------
+#min_style         cg 
+#minimize          1e-16 1e-16 $(v_steps_EM) 1000000
+#dump              min all custom 1500 dumps_EM.lmc id type x y z vx vy vz fx fy fz 
+#dump_modify       min sort id
+#undump            min
+#write_restart     restart.*.DEEPMD
+#write_restart     restart.*.DEEPMD
+
+#Note:
+# fix ID group-ID gcmc N X M type seed T mu displace keyword values ...
+#When pressure is specified chemical potential is ignored
+#full_energy: calculates total potential energy of entire system
+
+
+variable 	  rho equal density
+variable 	  P equal press
+
+variable          xxy equal xy
+variable          xxz equal xz
+variable          yyz equal yz
+variable          xxlo equal xlo
+variable          xxhi equal xhi
+variable          yylo equal ylo
+variable          yyhi equal yhi
+variable          zzlo equal zlo
+variable          zzhi equal zhi
+
+region 		  atom_box  prism $(v_xxlo) $(v_xxhi) $(v_yylo) $(v_yyhi) 30 55 $(v_xxy) $(v_xxz) $(v_yyz) side in units box
+region            fixatm prism $(v_xxlo) $(v_xxhi) $(v_yylo) $(v_yyhi) $(v_zzlo) $(v_zzlo+2) $(v_xxy) $(v_xxz) $(v_yyz) side in units box    # region of fixatm
+group             gfixatm region fixatm                                          # groupong fixatm
+
+# Two different regions for atom inserion:
+region		  insertR1 block $(v_xxlo) $(v_xxhi) $(v_yylo) $(v_yyhi) $(v_zzhi/2+5) $(v_zzhi/2+35) units box
+region            insertR block $(v_xxlo) $(v_xxhi) $(v_yylo) $(v_yyhi) $(v_zzhi/2-35) $(v_zzhi/2-5) units box
+
+#-----------------NPT on all atoms:
+# For dynamic update of temperature
+compute           mdtemp all temp
+compute_modify    mdtemp dynamic/dof yes
+
+fix               1 all nvt temp $(v_TEMPR1) $(v_TEMPR1) $(v_dt*100) #aniso 0 0 $(v_dt*1000)                          # NPT on all atoms
+fix_modify        1 temp mdtemp
+
+# Fixing the 2 angstrom of SiO2 atoms:
+fix               Force_fixatm_out gfixatm setforce 0.0 0.0 0.0
+velocity          gfixatm set 0 0 0 units box
+
+# Depositing Co atoms in two different regions:
+fix               DP1 Co deposit $(v_insert) 3 $(v_everyDP) $(v_RSEED) region insertR near $(v_near) vx -6.0 6.0 vy -6.0 6.0 vz -6.0 6.0
+fix               DP11 Co deposit $(v_insert) 3 $(v_everyDP) $(v_RSEED) region insertR1 near $(v_near) vx -6.0 6.0 vy -6.0 6.0 vz -6.0 6.0
+
+# Dumping the coordinates every 2 ps:
+dump              1 all custom $(v_dumpfreq) dumps-1_NVT.lmc id type element x y z vx vy vz fx fy fz c_stratm[1] c_stratm[2] c_stratm[3] c_stratm[4] c_stratm[5] c_stratm[6] c_stratm[7] c_stratm[8] c_stratm[9]
+dump_modify       1 sort id element Si O Co
+
+# Counting Co atoms dynamically
+variable         Cobalt atom "type==3"
+group            Cobalt dynamic all var Cobalt
+variable         nCo equal count(Cobalt)+0.00001
+variable         Time equal time
+variable         Rate equal v_nCo/(v_Time+0.000001)
+
+variable          Temp equal c_mdtemp
+thermo_style     custom time step etotal ke pe v_Temp press v_nCo v_Rate density
+
+run               $(v_steps_PR)                                                                 # total time = 4 ps
+undump            1
+unfix             1
+
+write_restart     restart.*.DEEPMD
+write_restart     restart.*.DEEPMD
+write_data 	  Model.*.lmc
+

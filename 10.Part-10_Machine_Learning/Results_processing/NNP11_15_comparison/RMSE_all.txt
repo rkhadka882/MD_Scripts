@@ -1,0 +1,3 @@
+
+ jdftxoutput_10frames Train RMSE: 0.004475 eV Val RMSE: 0.004411 eV
+ jdftxoutput_5frames Train RMSE: 0.135620 eV Val RMSE: 0.136824 eV

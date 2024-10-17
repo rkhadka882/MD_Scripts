@@ -1,0 +1,109 @@
+#!/bin/bash -l
+#SBATCH -J CoSi_simulation
+#SBATCH -N 1
+#SBATCH -n 8
+#SBATCH -i in.lammps
+#SBATCH --gres=gpu:8
+#SBATCH -t 6:00:00 #--qos=nplfen01-24hr
+#SBATCH -o Output.%j
+#SBATCH -e Error.%j
+
+#-----------------------------------------------------------------------------------------------------------------
+#40=40                                  # n=40 for 60x10x10, n=80 for 120x10x10 & 60x15x15
+#in.lammps=in.BTO
+host=`hostname | cut -c 1-3`
+lammps=lmp_$host
+
+read -p "Enter the input file  : " in_file
+
+#---------Modules to load-----------------------------------------------------------------------------------------
+module purge
+module load gcc/8.4.0/1 cuda/10.2 
+#conda activate deepmd
+conda activate deepmd_gpu
+
+#--------Cleaning up previous datafiles---------------------------------------------------------------------------
+var_1=`ls -lrt | grep -e "jobid" | awk -F "." '{print $2}'` # Grab the previous process jobid
+
+#--Ferroelectric simulation outputs
+mv dumps_pol.lmc dumps_pol.lmc_$var_1
+mv dumps_pol_frame.lmc dumps_pol_frame.lmc_$var_1
+mv dumps_disp.lmc dumps_disp.lmc_$var_1
+mv ave_temp_vol.dat ave_temp_vol.dat_$var_1
+mv ave_temp_lat_angle.dat ave_temp_lat_angle.dat_$var_1
+mv dumps_5_EF-All_side.lmc dumps_5_EF-All_side.lmc_$var_1
+
+mv *.dat dumps_* ave_* log* Error.$var_1  Output.$var_1 jobid.$var_1 jobfile_$var_1 
+
+#--Viscoelastic damping outputs
+mv dump_stress-strain.lmc dump_stress-strain.lmc_$var_1
+mv Shear.dat Shear.dat_$var_1
+mv dump_stress-strain.lmc_$var_1 Shear.dat_$var_1 log* jobfile_$var_1
+
+#--Nanoindentation outputs
+mv Nano_indent_in.dat Nano_indent_in.dat_$var_1
+mv Nano_indent_out.dat Nano_indent_out.dat_$var_1
+mv Nano_* jobfile_$var_1
+
+#--Thermalconductivity outputs
+mv Au-SAM* *.dat *.lmc *.txt *.data *.dat *.lmc *.out dump* data* log* jobfile_$var_1
+
+#-------New Process----------------------------------------------------------------------------------------------
+mkdir jobfile_$SLURM_JOBID
+
+touch jobid.$SLURM_JOBID                                 # This file is created to facilitate the cleanup process
+
+#---------Job description
+# salloc -p cluster xterm -e 'ssh -X `srun hostname`'  # For interactive jobs
+mpirun lmp -in in.lammps #$in_file                                          # Running LAMMPS-MD
+
+sleep 5
+
+wait $SLURM_JOBID
+
+#mv log.lammps log.$SLURM_JOBID
+
+#--Ferroelectric simulation outputs
+mv dumps_pol.lmc dumps_pol.lmc_$SLURM_JOBID
+mv dumps_pol_frame.lmc dumps_pol_frame.lmc_$SLURM_JOBID
+mv dumps_disp.lmc dumps_disp.lmc_$SLURM_JOBID
+mv ave_temp_vol.dat ave_temp_vol.dat_$SLURM_JOBID
+mv ave_temp_lat_angle.dat ave_temp_lat_angle.dat_$SLURM_JOBID
+mv dumps_5_EF-All_side.lmc dumps_5_EF-All_side.lmc_$SLURM_JOBID
+mv dumps_* ave_* log* Error.$SLURM_JOBID  Output.$SLURM_JOBID jobid.$SLURM_JOBID jobfile_$SLURM_JOBID
+
+#--Viscoelastic damping outputs
+mv dump_stress-strain.lmc dump_stress-strain.lmc_$SLURM_JOBID
+mv Shear.dat Shear.dat_$SLURM_JOBID
+mv dump_stress-strain.lmc_$SLURM_JOBID Shear.dat_$SLURM_JOBID log* jobfile_$SLURM_JOBID
+
+#--Nanoindentation outputs
+mv Nano_indent_in.dat Nano_indent_in.dat_$SLURM_JOBID
+mv Nano_indent_out.dat Nano_indent_out.dat_$SLURM_JOBID
+mv Nano_* jobfile_$SLURM_JOBID
+
+mv *.dat *.lmc *.txt *.data  *.out dump* data* jobfile_$SLURM_JOBID
+#---------System-information------------------------------------------------------------------------------------
+#DCS AiMOS  : 268N, 40c/N; 160logical cores/N partition: debug 30min N1,dcsfen01, dcsfen02
+#DRP cluster: 64 N, 16c/N; partition: debug 1hrs N2, drp 6hrs N unlimited; drpfen01 or drpfen02
+#NPL cluster: 40 N, 20c/N
+
+#---------SLURM commands
+# -J jobname, -q jobtype, -N nodes, -t time, -i inputfile -o outputfile, -n cores, -D working directory
+# -p partition requested (debug, ), -l include task no. to outputfile
+# sbatch   : submit the job
+# srun     : run parallel job
+# squeue   : report job status; squeue -u DKFMrjkh -t all, squeue -s -p debug, squeue -i60
+# scancel  : cancel the job; scancel 4500.1 (cancel job step #), scancel jobID, scancel -u DKFMrjkh -state=pending (cancel all pending jobs)
+# sstat    : reports about currently running jobs and job steps
+# sprio    : reports factors comprising a job's priority
+# sdiag    : reports execution time and queue lengths
+# sinfo    : report system status
+# sacct    : reports accouting-info of individual jobs and steps; sacct -u DKFMrjkh, sacct -p debug
+# sreport  : reports about detailed resources uses
+
+#----------Storage Inforamtion----------------------------------------------------------------------------------
+# Home storage: 10Gb, lifetime
+# barn storage: 10Gb, lifetime
+# scratch storage: Unlimited, purged if data is unused in 56 days.
+

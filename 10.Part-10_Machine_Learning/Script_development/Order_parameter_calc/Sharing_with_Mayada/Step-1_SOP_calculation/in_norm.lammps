@@ -1,0 +1,127 @@
+# Input Script LAMMPS for studying Phonon wave packet simulation on Au
+# # Rajan Khadka, 10/5/2023
+# # Modified:
+# # Potentials used: DeepMD
+
+# Location of DeepMD potential:
+variable          loc index /gpfs/u/home/TMGN/TMGNrjkh/scratch/NNP_versions # Put all your Models here, 
+print "location ${loc}" 
+
+# ------------------------ INITIALIZATION -----------------------------------------------
+units           metal       # gram/mole, ang, pico sec, eV, Kelvin, bars
+dimension	3
+newton		on
+boundary        p p p
+atom_style      full       # always use atomic 
+
+# ------------------------ SYSTEM DEFINITION ----------------------------------------------
+read_data        data.lmp #mp-7577_CoSi_5x5x5.lmp #CoSi_22746_5x5x10.lmp  
+#read_restart    restart.*.DEEPMD
+#restart         50000 restart.*.DEEPMD
+
+#---------------Follow the order of atom numbering on structure file
+mass              1 58.933  # Co
+mass              2 28.086  # Si
+mass              3 15.999  # O
+mass              4 28.086  # Si1
+
+group             Co type 1
+group             Si type 2
+group             O  type 3
+group             Si1 type 4
+group             cosi type 1 2           # Grouping both for GCMC run
+
+#-----------------Control Input Variables
+variable	  NNPfreq equal 100				# NNP model deviation frequency
+variable          dfreq equal 0.01                                 # dfreq = dump frequency in ps, DONT CHANGE
+variable          dt equal 0.001                               # Time step (dt) = 0.25 fs, 0.00025 ps
+variable          TEMPR1 equal 1                              # NPT temperature T= 10 K
+variable          TEMPR2 equal 1                             # NPT temperature T= 10 K
+variable          time_PR equal 100                            # Pressure relaxation time, NPT, 50 ps
+variable          time_EM equal 100                             # Energy minimization
+variable          SEED equal random(100000,800000,328278)       # Random number seed for velocity
+
+#-----------------Internal Variable Computation
+variable          dumpfreq equal v_dfreq/v_dt                   # Calculating the steps for dumping the frame.
+variable          steps_PR equal v_time_PR/v_dt                # Equillibration steps for Pressure relaxation, NPT
+variable          steps_EM equal v_time_EM/v_dt                # Equillibration steps for energy minimization
+variable          RSEED format SEED %.6g                       # Rounding off th seed value
+
+#print "location $(v_loc)"
+#-----------------Force fields
+# See https://deepmd.rtfd.io/lammps/ for usage
+pair_style      deepmd ${loc}/NNP-15_M1-compress.pb #${loc}/NNP-7_M2.pb ${loc}/NNP-7_M3.pb out_file model_devi.out out_freq $(v_NNPfreq)
+#pair_style      deepmd ../NNP-7_M1.pb ../NNP-7_M2.pb ../NNP-7_M3.pb out_file model_devi.out out_freq $(v_NNPfreq) #atomic
+
+# If atom names (O H in this example) are not set in the pair_coeff command, the type_map defined by the training parameter will be used by default.
+pair_coeff  	* *	Co Si O Si
+
+#------------------------- SIMULATIOIN SETTINGS -------------------------------------------
+run_style        verlet                                                         # Standard velocity-Verlet integrator
+neighbor         2.0 bin
+neigh_modify     delay 0 every 10 check no
+comm_modify      vel yes
+thermo_style     custom time step etotal ke pe temp press pxx pyy pzz lx ly lz vol density  
+thermo           10
+timestep         $(v_dt)
+
+#velocity         all create $(v_TEMPR1) $(v_RSEED) rot yes dist gaussian
+
+#-------------------Computing per atom properties
+compute 	  keatm all ke/atom
+compute           peatm all pe/atom 
+compute		  stratm all centroid/stress/atom NULL virial              # 1= xx, 2=yy, 3=zz, 4=xy, 5=xz, 6=yz, 7=yx, 8=zx, 9=zy  
+
+#Note: You have to provide dipole.pb from training to use this
+#compute 	  dipole all deeptensor/atom dipole.pb		# Atomic tensorial properties
+
+#-----------------ENERGY MINIMIZATION SIMULATION
+#fix               relax all box/relax aniso 0.0
+#min_style         fire
+#minimize          1e-16 1e-16 100 1000000
+#unfix		  relax
+
+##---------------------RUN A SIMULATION-----------------------------------------------------
+compute           1 all orientorder/atom nnn 15 degrees 12 1 2 3 4 5 6 7 8 9 10 11 12 #wl yes wl/hat yes
+compute           CN all coord/atom cutoff 3.5 1 2 3 4
+
+#fix               fcn all ave/atom 1 1 1 c_CN[1] c_CN[2] c_CN[3] c_CN[4]
+variable          NC1 atom c_CN[1]/10
+variable          NC2 atom c_CN[2]/10
+variable          NC3 atom c_CN[3]/10
+variable          NC4 atom c_CN[4]/10
+
+
+# Averaging the SOP:
+fix               aSOP all ave/atom 1 10 1000 c_1[1] c_1[2] c_1[3] c_1[4] c_1[5] c_1[6] c_1[7] c_1[8] c_1[9] c_1[10] c_1[11] c_1[12] c_CN[1] c_CN[2] c_CN[3] c_CN[4]           # Averain
+
+fix               aSOP1 all ave/atom 1 10 1000 v_NC1 v_NC2 v_NC3 v_NC4 
+
+
+dump              aveSOP all custom 1000 dumps_aveSOP.lmc id type element x y z f_aSOP[1] f_aSOP[2] f_aSOP[3] f_aSOP[4] f_aSOP[5] f_aSOP[6] f_aSOP[7] f_aSOP[8] f_aSOP[9] f_aSOP[10] f_aSOP[11] f_aSOP[12] c_CN[1] c_CN[2] c_CN[3] c_CN[4] #c_CN
+dump_modify       aveSOP sort id element Co Si O Si1
+
+#dump              allSOP all custom 1000 dumps_SOP.lmc id type element x y z c_1[1] c_1[2] c_1[3] c_1[4] c_1[5] c_1[6] c_1[7] c_1[8] c_1[9] c_1[10] c_1[11] c_1[12] #c_CN
+#dump_modify       allSOP sort id element Co Si O Si1
+
+#fix               relax all box/relax aniso 0.0
+#min_style         cg
+#minimize          1e-16 1e-16 $(v_steps_EM) 1000000
+#unfix		  relax
+
+#-----------------NPT on all atoms:
+fix               2 all npt temp $(v_TEMPR1) $(v_TEMPR2) $(v_dt*100) aniso 0 0 $(v_dt*1000)                          # NPT on all atoms
+#dump              1 all custom $(v_dumpfreq) dumps-1_NPT_energy_stress.lmc id type element x y z vx vy vz fx fy fz c_stratm[1] c_stratm[2] c_stratm[3] c_stratm[4] c_stratm[5] c_stratm[6] c_stratm[7] c_stratm[8] c_stratm[9]
+#dump_modify       1 sort id element Co Si
+
+#dump		  2 all custom $(v_dumpfreq) dumps-2_NPT_structure_param.lmc id type element x y z c_1[1] c_1[2] c_1[3] c_1[4] c_1[5] c_1[6] c_1[7] c_1[8] c_1[9] c_1[10] c_1[11] c_1[12] c_2
+#dump_modify	  2 sort id element Co Si
+
+run               2000 #$(v_steps_PR)                                                                 # total time = 4 ps
+#undump           1
+#undump		  2
+unfix             2
+
+#write_restart     restart.*.DEEPMD
+#write_restart     restart.*.DEEPMD
+#write_data        Final_structure.*.lmc

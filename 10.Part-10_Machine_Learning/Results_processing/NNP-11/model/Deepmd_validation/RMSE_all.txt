@@ -1,0 +1,16 @@
+ SiO2_amorphous_jdftxout Train RMSE: 0.800412 eV Val RMSE: 0.834376 eV
+ SiO2_6930_NPT_jdftxout Train RMSE: 0.140051 eV Val RMSE: 0.138644 eV
+ SiO2_6930_NVT_jdftxout Train RMSE: 0.501389 eV Val RMSE: 0.503765 eV
+ SiO2_546794_NPT_jdftxout Train RMSE: 0.164199 eV Val RMSE: 0.155901 eV
+ SiO2_NVT_jdftxout Train RMSE: 0.547941 eV Val RMSE: 0.594016 eV
+ all_data Train RMSE: 0.344993 eV Val RMSE: 0.386864 eV
+ CoSi_nc_NPT_jdftxout Train RMSE: 0.274629 eV Val RMSE: 0.286190 eV
+ Co2Si_NPT_jdftxout Train RMSE: 0.259355 eV Val RMSE: 0.252996 eV
+ Co2Si_NVT_jdftxout Train RMSE: 0.358754 eV Val RMSE: 0.328328 eV
+ CoSi2_NPT_jdftxout Train RMSE: 0.315712 eV Val RMSE: 0.336691 eV
+ CoSi2_NVT_jdftxout Train RMSE: 0.654936 eV Val RMSE: 0.618711 eV
+ CoSi_liq-SiO2_amp_NPT_jdftxout Train RMSE: 2.041745 eV Val RMSE: 1.730503 eV
+ CoSi_crys_liq_NPT_jdftxout Train RMSE: 1.917819 eV Val RMSE: 17.040109 eV
+ NPT_sim_jdftxout Train RMSE: 0.417612 eV Val RMSE: 0.414060 eV
+ CoSi2_crys-liq_NPT_jdftxout Train RMSE: 0.852855 eV Val RMSE: 0.797474 eV
+ CoSi_liquid_jdftxout Train RMSE: 0.684249 eV Val RMSE: 0.676671 eV

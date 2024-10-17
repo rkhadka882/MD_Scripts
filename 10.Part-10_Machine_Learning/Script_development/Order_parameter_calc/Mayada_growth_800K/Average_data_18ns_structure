@@ -1,0 +1,84 @@
+All the atoms:
+ITEM: ATOMS id    18303.485587
+type                  1.488849
+x                    25.719589
+y                    27.840723
+z                    51.001857
+v_normCoSi            0.612699
+v_normACoSi           1.478027
+v_normCo2Si           1.076043
+v_normCoSi2           1.829063
+v_Co                  3.125266
+v_Si                  2.906713
+v_SiO2                3.461481
+
+1st_half along y:
+ITEM: ATOMS id    19679.787826
+type                  1.510159
+x                    25.090373
+y                    13.572986
+z                    51.004744
+v_normCoSi            0.688473
+v_normACoSi           1.546108
+v_normCo2Si           1.159632
+v_normCoSi2           1.739700
+v_Co                  3.126417
+v_Si                  2.799617
+v_SiO2                3.380273
+
+2nd_half along y:
+ITEM: ATOMS id    17471.501922
+type                  1.475051
+x                    26.101159
+y                    36.499524
+z                    51.001541
+v_normCoSi            0.566454
+v_normACoSi           1.437123
+v_normCo2Si           1.023554
+v_normCoSi2           1.884026
+v_Co                  3.122309
+v_Si                  2.972176
+v_SiO2                3.511245
+
+NNP-15 29 ps structure
+All:
+ITEM: ATOMS id    19186.968397
+type                  1.496225
+x                    25.757922
+y                    25.791394
+z                    51.003373
+v_normCoSi            0.616303
+v_normACoSi           1.493051
+v_normCo2Si           1.107052
+v_normCoSi2           1.834812
+v_Co                  3.146994
+v_Si                  2.913556
+v_SiO2                3.467875
+
+1st half:
+ITEM: ATOMS id    20270.806518
+type                  1.510670
+x                    25.758475
+y                    10.967431
+z                    50.995166
+v_normCoSi            0.678847
+v_normACoSi           1.548365
+v_normCo2Si           1.167264
+v_normCoSi2           1.770762
+v_Co                  3.133524
+v_Si                  2.832315
+v_SiO2                3.403863
+
+2nd half:
+ITEM: ATOMS id    22315.961231
+type                  1.483858
+x                    25.788134
+y                    36.505438
+z                    61.204328
+v_normCoSi            0.566998
+v_normACoSi           1.453618
+v_normCo2Si           1.065984
+v_normCoSi2           1.883772
+v_Co                  3.158106
+v_Si                  2.979214
+v_SiO2                3.519122
